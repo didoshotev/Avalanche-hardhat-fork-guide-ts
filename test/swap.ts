@@ -1,10 +1,11 @@
-import { ethers } from "hardhat";
+import { ethers, waffle } from "hardhat";
 import * as dotenv from "dotenv";
 import { SignerWithAddress } from "hardhat-deploy-ethers/src/signers";
-import { BigNumber } from "ethers";
-import { Swapper, IWAVAX, PeachPool } from "../typechain";
+import { BigNumber, providers } from "ethers";
+import { Swapper, IWAVAX, PeachPool, PeachToken } from "../typechain";
 import { expect } from "chai";
 import { ROUTER_ADDRESS, FACTORY_ADDRESS } from "../constants";
+import { Provider } from "@ethersproject/abstract-provider";
 
 dotenv.config();
 
@@ -16,6 +17,8 @@ const USDT_E_ADDRESS = "0xc7198437980c041c805A1EDcbA50c1Ce5db95118";
 
 const RINKEBEY_DAI = "0x5592EC0cfb4dbc12D3aB100b257153436a1f0FEa";
 const RINKEBEY_WETH = "0xc778417E063141139Fce010982780140Aa0cD5Ab";
+
+const PROVIDER: Provider = waffle.provider;
 
 describe("Swappity swap", function () {
 
@@ -61,16 +64,15 @@ describe("Swappity swap", function () {
             })
         }
         const testBalance = await wavaxTokenContract.balanceOf(account1.address);
-        // console.log('testBalance: ');
-        
+
         // // We tell Wavax contract that we are cool with Swapper contract using our Wavax on our behalve
         // await wavaxTokenContract.approve(swapper.address, ethers.constants.MaxUint256);
 
         //  Check balance before the swap
         const wavaxBalanceBefore = await wavaxTokenContract.balanceOf(account1.address);
         const pngBalanceBefore = await pngTokenContract.balanceOf(account1.address);
-        console.log('wavaxBalanceBefore: ', wavaxBalanceBefore);
-        
+        // console.log('wavaxBalanceBefore: ', wavaxBalanceBefore);
+
 
         expect(wavaxBalanceBefore).eq(DEPOSIT_NUMBER);
         expect(pngBalanceBefore).eq(0);
@@ -89,8 +91,11 @@ describe("Swappity swap", function () {
 
 
 describe("liquidity", function () {
-    let peachPool: PeachPool
+    let peachToken: PeachToken;
+    let peachPool: PeachPool;
     let account1: SignerWithAddress;
+    // const PROVIDER: Provider = waffle.provider;
+
 
     beforeEach(async function () {
         await ethers.provider.send(
@@ -106,18 +111,18 @@ describe("liquidity", function () {
         )
 
         const accounts = await ethers.getSigners();
-        // console.log('accounts: ', accounts);
 
         // @ts-ignore
         account1 = accounts[0];
-        // console.log(account1);
 
+        // deploy ERC20 PeachToken
+        const PeachTokenFactory = await ethers.getContractFactory("PeachToken");
+        peachToken = await PeachTokenFactory.deploy();
+    
+        // deploy PeachPool
         // address _factory, address _router, address _peachToken, address _WAVAX
-
         const PeachPoolFactory = await ethers.getContractFactory("PeachPool");
-        // console.log('PeachPoolFactory: ', PeachPoolFactory);
-
-        peachPool = await PeachPoolFactory.deploy(FACTORY_ADDRESS[43114], ROUTER_ADDRESS[43114], USDT_E_ADDRESS, WAVAX_ADDRESS);
+        peachPool = await PeachPoolFactory.deploy(FACTORY_ADDRESS[43114], ROUTER_ADDRESS[43114], peachToken.address, WAVAX_ADDRESS);    
     })
 
     //   @params addLiquidityAVAX
@@ -128,10 +133,55 @@ describe("liquidity", function () {
     //     address to,
     //     uint256 deadline
     it("should initilize PeachPool", async function () {
-        console.log('PeachPool: ', peachPool);
+        const DEPOSIT_NUMBER = "500000000000000000000";
+        const balanceOfDeployer = await peachToken.balanceOf(account1.address);
+        const balancePeachFormatted = ethers.utils.formatEther(balanceOfDeployer);
+        // console.log(peachToken.address);
+        console.log('-------------');
+        console.log('-------------');
         console.log('-------------');
 
-        // we need to send some USDT.E first, before we provide liquidity   
-        // peachPool.addLiquidityAvax(USDT_E_ADDRESS);
+        // listen for events
+
+
+        // We get an instance of the wavax contract
+        const wavaxTokenContract = await ethers.getContractAt("IWAVAX", WAVAX_ADDRESS)
+
+        // send avax to account1
+        await wavaxTokenContract.deposit({
+            value: BigNumber.from(DEPOSIT_NUMBER)
+        })
+
+        const balanceAvax = await wavaxTokenContract.balanceOf(account1.address);
+        const balanceAvaxFormatted = ethers.utils.formatEther(balanceAvax);
+
+        console.log('balanceAvax: ', balanceAvaxFormatted);
+        console.log('balancePeach', balancePeachFormatted);
+
+        // approve PeachPool to spend wavax
+        await wavaxTokenContract.approve(peachPool.address, ethers.constants.MaxUint256);
+
+        const addLP = await peachPool.addLiquidityAvax(peachToken.address, 2000, 500);
+        console.log('ADD LP: ', addLP);
+
+        // console.log(await providers.BaseProvider.getNetwork());
+        // console.log(ethers.getDefaultProvider());
+
+        const receipt = await PROVIDER.getTransactionReceipt(addLP.hash);
+        console.log('RECEIPT: ', receipt);
+        
+        const balanceOfDeployer2 = await peachToken.balanceOf(account1.address);
+        const balancePeachFormatted2 = ethers.utils.formatEther(balanceOfDeployer2);
+        
+        const balanceAvax2 = await wavaxTokenContract.balanceOf(account1.address);
+        const balanceAvaxFormatted2 = ethers.utils.formatEther(balanceAvax2);
+        
+        
+        console.log('balanceAvax after: ', balanceAvaxFormatted2);
+        console.log('balancePeach after: ', balancePeachFormatted2);
+
+        console.log('-------------');
+        console.log('-------------');
+        console.log('-------------');
     })
 })

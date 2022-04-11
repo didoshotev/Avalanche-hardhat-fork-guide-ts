@@ -9,7 +9,7 @@ const main = async (): Promise<any> => {
 
     await swapper.deployed();
 
-    console.log("Swapper deployed to:", swapper.address);
+    // console.log("Swapper deployed to:", swapper.address);
 }
 
 main()
